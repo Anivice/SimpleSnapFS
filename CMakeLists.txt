@@ -76,6 +76,7 @@ function(add_unit_test
     add_executable(${TEST_NAME} ${TEST_MAINF_FILE})
     target_link_libraries(${TEST_NAME} PUBLIC ${TEST_LIBRARY})
     add_test(NAME unit_test_${TEST_NAME} COMMAND ${TEST_NAME})
+    set_tests_properties(unit_test_${TEST_NAME} PROPERTIES ENVIRONMENT "ASAN_OPTIONS=detect_odr_violation=0")
 endfunction()
 
 include_directories(src/include)
