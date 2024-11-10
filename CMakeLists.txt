@@ -101,6 +101,35 @@ add_library(module_mgr SHARED
 target_link_libraries(module_mgr PUBLIC fs_debug)
 add_unit_test(module_mgr_test src/tests/module_mgr_test.cpp module_mgr)
 
+# Config
+add_library(config SHARED
+        src/config/grammar.c
+        src/config/libconfig.c
+        src/config/scanctx.c
+        src/config/scanner.c
+        src/config/strbuf.c
+        src/config/strvec.c
+        src/config/util.c
+        src/config/wincompat.c
+
+        src/include/config/grammar.h
+        src/include/config/parsectx.h
+        src/include/config/scanctx.h
+        src/include/config/scanner.h
+        src/include/config/win32/stdint.h
+        src/include/config/strbuf.h
+        src/include/config/strvec.h
+        src/include/config/util.h
+        src/include/config/wincompat.h
+
+        src/config/libconfigcpp.cc
+
+        src/include/config/libconfig.h++
+        src/include/config/libconfig.hh
+)
+target_include_directories(config PUBLIC src/include/config)
+add_unit_test(config_test src/tests/config_test.cpp config)
+
 # Example module
 add_library(mod_example SHARED src/core_modules/example.cpp)
 target_link_libraries(mod_example fs_debug)
