@@ -33,7 +33,7 @@ protected:
 
 public:
     virtual void graceful_exit_handler() { };
-    virtual ~graceful_exit_t();
+    virtual ~graceful_exit_t() = default;
 };
 
 class fs_error_t : public std::runtime_error
@@ -41,14 +41,20 @@ class fs_error_t : public std::runtime_error
 private:
     std::string err_info;
     graceful_exit_t & exit_handler;
+    int err_code;
 
 public:
     enum error_types_t {
         SUCCESS,
+        NO_SUCH_MODULE,
+        MODULE_EXISTS,
+        MODULE_LOADING_FAILED,
+        SYMBOL_BOT_FOUND_IN_MODULE,
     };
 
     explicit fs_error_t(error_types_t, graceful_exit_t &);
     [[nodiscard]] const char * what() const noexcept override;
+    [[nodiscard]] int get_err_code() const noexcept { return err_code; }
 };
 
 namespace _log

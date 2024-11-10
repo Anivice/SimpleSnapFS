@@ -4,12 +4,9 @@
 
 const char * sysdarft_errors[] = {
     "Success",
+    "No such module",
+    "Module exists",
 };
-
-graceful_exit_t::~graceful_exit_t()
-{
-    log(_log::LOG_NORMAL, "Exit handler execution is now complete.\n");
-}
 
 inline std::string init_error_msg(const fs_error_t::error_types_t types)
 {
@@ -26,7 +23,7 @@ inline std::string init_error_msg(const fs_error_t::error_types_t types)
 }
 
 fs_error_t::fs_error_t(const fs_error_t::error_types_t types, graceful_exit_t & handler)
-    : std::runtime_error(init_error_msg(types)), exit_handler(handler)
+    : std::runtime_error(init_error_msg(types)), exit_handler(handler), err_code(types)
 {
     log(_log::LOG_NORMAL, "Exception generated!\n");
     err_info = std::runtime_error::what();

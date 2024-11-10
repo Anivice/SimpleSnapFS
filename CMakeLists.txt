@@ -3,6 +3,8 @@ cmake_minimum_required(VERSION 3.18)
 project(SimpleSnapFS C CXX)
 
 enable_testing()
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_C_STANDARD 99)
 
 # Universal compiler and linker flags
 set(compiler_options
@@ -14,6 +16,8 @@ set(compiler_options
         -Wuninitialized                      # Warn if variables are used uninitialized
         -fdiagnostics-show-option            # Show which option triggered the warning
         -fdiagnostics-color=always           # Enable colored diagnostics for better readability
+
+        -std=c++20
 
         # Debugging and stack protection
         -g3                                  # Maximum debug information, including macro expansions
@@ -46,6 +50,8 @@ set(linker_options
         -Wl,-z,defs                             # Ensure all symbols are defined, and prevent undefined symbols
         -Wl,-O1                                 # Optimize the linking process while maintaining debuggability
 
+        -std=c++20
+
         -gdwarf-4
 
         # AddressSanitizer and ThreadSanitizer linking (to ensure proper linking of sanitizers)
@@ -74,12 +80,23 @@ endfunction()
 
 include_directories(src/include)
 
+# Debug support
 add_library(fs_debug SHARED
         src/include/debug.h
         src/debug/runtime_error.cpp
         src/debug/stack_frame_tracing.cpp
 )
-add_unit_test(fs_debug_test
-        src/tests/fs_debug_test.cpp
-        fs_debug
+add_unit_test(fs_debug_test src/tests/fs_debug_test.cpp fs_debug)
+
+# Module manager
+add_library(module_mgr SHARED
+        src/include/mod_types.h
+        src/include/module.h
+        src/modular/module.cpp
 )
+target_link_libraries(module_mgr PUBLIC fs_debug)
+add_unit_test(module_mgr_test src/tests/module_mgr_test.cpp module_mgr)
+
+# Example module
+add_library(mod_example SHARED src/core_modules/example.cpp)
+target_link_libraries(mod_example fs_debug)
