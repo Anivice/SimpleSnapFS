@@ -6,6 +6,8 @@ const char * sysdarft_errors[] = {
     "Success",
     "No such module",
     "Module exists",
+    "Module loading failed",
+    "Symbol not found",
 };
 
 inline std::string init_error_msg(const fs_error_t::error_types_t types)
@@ -29,6 +31,7 @@ fs_error_t::fs_error_t(const fs_error_t::error_types_t types, graceful_exit_t & 
     err_info = std::runtime_error::what();
     log(_log::LOG_NORMAL, "Now executing exit handler...\n");
     exit_handler.graceful_exit_handler();
+    log(_log::LOG_NORMAL, "Exit handler execution completed.\n");
 }
 
 const char * fs_error_t::what() const noexcept

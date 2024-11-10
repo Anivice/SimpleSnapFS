@@ -67,6 +67,8 @@ set(linker_options
 
 add_compile_options(${compiler_options})
 add_link_options(${linker_options})
+add_compile_definitions(CMAKE_BINARY_DIR=\"${CMAKE_BINARY_DIR}\")
+add_compile_definitions(CMAKE_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\")
 
 function(add_unit_test
         TEST_NAME                                   # test name, also the test executable file name
@@ -93,6 +95,7 @@ add_unit_test(fs_debug_test src/tests/fs_debug_test.cpp fs_debug)
 add_library(module_mgr SHARED
         src/include/mod_types.h
         src/include/module.h
+        src/include/module.inl
         src/modular/module.cpp
 )
 target_link_libraries(module_mgr PUBLIC fs_debug)

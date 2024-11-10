@@ -49,7 +49,7 @@ public:
         NO_SUCH_MODULE,
         MODULE_EXISTS,
         MODULE_LOADING_FAILED,
-        SYMBOL_BOT_FOUND_IN_MODULE,
+        SYMBOL_NOT_FOUND,
     };
 
     explicit fs_error_t(error_types_t, graceful_exit_t &);
@@ -70,14 +70,14 @@ namespace _log
 
         switch (color)
         {
-            case RED: ostream << _RED_; break;
-            case GREEN: ostream << _GREEN_; break;
-            case BLUE: ostream << _BLUE_; break;
+            case RED:    ostream << _RED_;    break;
+            case GREEN:  ostream << _GREEN_;  break;
+            case BLUE:   ostream << _BLUE_;   break;
             case PURPLE: ostream << _PURPLE_; break;
             case YELLOW: ostream << _YELLOW_; break;
-            case CYAN: ostream << _CYAN_; break;
-            case CLEAR: ostream << _CLEAR_; break;
-            case BOLD: ostream << _BOLD_; break;
+            case CYAN:   ostream << _CYAN_;   break;
+            case CLEAR:  ostream << _CLEAR_;  break;
+            case BOLD:   ostream << _BOLD_;   break;
         }
     }
 
