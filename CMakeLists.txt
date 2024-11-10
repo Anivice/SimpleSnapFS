@@ -131,5 +131,5 @@ target_include_directories(config PUBLIC src/include/config)
 add_unit_test(config_test src/tests/config_test.cpp config)
 
 # Example module
-add_library(mod_example SHARED src/core_modules/example.cpp)
+add_library(mod_example SHARED src/tests/example.cpp)
 target_link_libraries(mod_example fs_debug)
