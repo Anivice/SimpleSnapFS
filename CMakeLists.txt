@@ -65,8 +65,14 @@ set(linker_options
         -fprofile-arcs -ftest-coverage -fPIC -pie
 )
 
-add_compile_options(${compiler_options})
-add_link_options(${linker_options})
+if ("${SANITIZER_CHECK}" STREQUAL "True")
+    add_compile_options(${compiler_options})
+    add_link_options(${linker_options})
+else ()
+    add_compile_options(-std=c++20 -g3 -O0 -gdwarf-4)
+    add_link_options(-Wl,-O1 -gdwarf-4)
+endif ()
+
 add_compile_definitions(CMAKE_BINARY_DIR=\"${CMAKE_BINARY_DIR}\")
 add_compile_definitions(CMAKE_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\")
 
@@ -129,6 +135,13 @@ add_library(config SHARED
 )
 target_include_directories(config PUBLIC src/include/config)
 add_unit_test(config_test src/tests/config_test.cpp config)
+
+add_library(init SHARED
+        src/include/init.h
+        src/init/init.cpp
+)
+target_link_libraries(init PUBLIC config fs_debug module_mgr)
+add_unit_test(init_test src/tests/init_test.cpp init)
 
 # Example module
 add_library(mod_example SHARED src/tests/example.cpp)

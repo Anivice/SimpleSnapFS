@@ -2,9 +2,10 @@
 #define MOD_TYPES_H
 
 #include <any>
+#include <vector>
 
-typedef std::any    (*invocation_handler_t)     (int argument_length, void ** argument_vector);
-typedef int         (*invocation_translator_t)  (const char * func_name);
+typedef std::vector < void * > Args_t;
+typedef std::any    (*invocation_handler_t)     (const Args_t &);
 
 struct module_description_t
 {

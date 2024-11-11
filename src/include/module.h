@@ -6,9 +6,7 @@
 #include <string>
 #include <map>
 #include <debug.h>
-#include <dlfcn.h>
 #include <mod_types.h>
-#include <sstream>
 
 extern class _module_mgr : public graceful_exit_t
 {
@@ -19,7 +17,6 @@ private:
         _module_mgr & manager;
         std::string module_name;
         std::string function_name;
-        std::any return_val;
 
         explicit mcall_temp_object(_module_mgr & _manager, std::string _module_name, std::string _function_name) noexcept
         : manager(_manager), module_name(std::move(_module_name)), function_name(std::move(_function_name)) { }
@@ -40,7 +37,7 @@ private:
     void cleanup();
 
 public:
-    template<typename... Args> std::string load(const std::string& module_path, Args&&... args);
+    std::string load(const std::string& module_path, const std::vector < std::string > & args);
     void unload(const std::string& module_name);
     template<typename... Args> std::any call(const std::string& module_name, const std::string& function, Args&&... args);
     mcall_temp_object mcall(const std::string& member);
