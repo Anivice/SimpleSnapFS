@@ -88,6 +88,7 @@ function(add_unit_test
 endfunction()
 
 include_directories(src/include)
+include_directories(src/modules/include)
 
 # Debug support
 add_library(fs_debug SHARED
@@ -142,6 +143,27 @@ add_library(init SHARED
 )
 target_link_libraries(init PUBLIC config fs_debug module_mgr)
 add_unit_test(init_test src/tests/init_test.cpp init)
+
+# file system utility module
+add_library(simplesnapfs SHARED
+        src/modules/simplesnapfs/module_handler.cpp
+        src/modules/simplesnapfs/bitmap/bitmap.cpp
+        src/modules/include/simplesnapfs.h
+        src/modules/include/bitmap.h
+)
+target_link_libraries(simplesnapfs PUBLIC fs_debug)
+
+# utility helper library
+add_library(utility STATIC
+        src/include/utility.h
+        src/utils/utility.cpp
+)
+
+# utility: mkfs.simplesnapfs
+add_executable(mkfs.simplesnapfs
+        src/utils/mkfs.simplesnapfs.cpp
+)
+target_link_libraries(mkfs.simplesnapfs PUBLIC simplesnapfs fs_debug utility)
 
 # Example module
 add_library(mod_example SHARED src/tests/example.cpp)
