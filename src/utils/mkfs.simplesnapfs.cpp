@@ -4,7 +4,8 @@
 #include <debug.h>
 #include <simplesnapfs.h>
 #include <chrono>
-#include <strstream>
+#include <checksum.h>
+#include <cstring>
 
 #define PACKAGE_VERSION "0.0.1"
 #define PACKAGE_FULLNAME "Simple Snapshot Filesystem Formatting Tool"
@@ -106,7 +107,6 @@ simplesnapfs_filesystem_head_t make_head(const uint32_t block_size, const uint64
         if (total_utilized_block_history.is_present(logic_blocks + utility_blocks) &&
             (logic_blocks + utility_blocks < block_count))
         {
-            log(_log::LOG_NORMAL, "Optimization has reached its limit. Not all available blocks can be utilized. Force stopping...\n");
             force_stop = true;
         }
 
@@ -167,21 +167,47 @@ simplesnapfs_filesystem_head_t make_head(const uint32_t block_size, const uint64
     exit(EXIT_FAILURE);
 }
 
+#define KBYTES(n) (1024 * n)
+#define MBYTES(n) (1024 * KBYTES(n))
+
+void block_size_sanity_check(const uint32_t block_size)
+{
+    const uint32_t available_block_size [] = {
+        512, 1024, KBYTES(2), KBYTES(4), KBYTES(8),
+        KBYTES(16), KBYTES(32), KBYTES(64), KBYTES(128),
+        KBYTES(256), KBYTES(512), MBYTES(1), MBYTES(2),
+        MBYTES(4), MBYTES(8), MBYTES(16), MBYTES(32), MBYTES(64)
+    };
+
+    for (const auto & size : available_block_size) {
+        if (block_size == size) {
+            return;
+        }
+    }
+
+    log(_log::LOG_ERROR, "Invalid block size: ", block_size, "\n"
+        "The block size can only be one of the following:\n"
+        "   512, 1024, 2048, 4096, 8192,"
+        "   16384, 32768, 65536, 131072,"
+        "   262144, 524288, 1048576, 2097152,"
+        "   4194304, 8388608, 16777216, 33554432, 67108864\n");
+
+    exit(EXIT_FAILURE);
+}
+
 int main(int argc, char ** argv)
 {
     const option options[] = {
-        {"version", no_argument,       nullptr, 'V'},
+        {"version", no_argument,       nullptr, 'v'},
         {"help",    no_argument,       nullptr, 'h'},
-        {"verbose", no_argument,       nullptr, 'v'},
         {"device",  required_argument, nullptr, 'd'},
         {"label",   required_argument, nullptr, 'L'},
         {"block_size", required_argument, nullptr, 'B'},
         {nullptr,   0,                 nullptr,  0 }  // End of options
     };
-    auto arguments = parse_arguments(argc, argv, options, "Vhvd:L:B:");
+    auto arguments = parse_arguments(argc, argv, options, "vhd:L:B:");
 
     // flags:
-    bool verbose = false;
     std::string device, label;
     unsigned int block_size = 4096;
 
@@ -191,12 +217,10 @@ int main(int argc, char ** argv)
             // The user query help, ignore all other options
             output_help(argv[0], std::cout);
             return EXIT_SUCCESS;
-        } else if (*arg == "-V") {
+        } else if (*arg == "-v") {
             // The user query version, ignore all other options
             output_version(std::cout);
             return EXIT_SUCCESS;
-        } else if (*arg == "-v") {
-            verbose = true;
         } else if (*arg == "-d") {
             arg += 1;
             device = *arg;
@@ -213,22 +237,25 @@ int main(int argc, char ** argv)
         }
     }
 
-    log(_log::LOG_NORMAL, "Proceeding with the following setup:\n");
-    log(_log::LOG_NORMAL, "Verbose:     ", (verbose ? "True" : "False"), "\n");
-    log(_log::LOG_NORMAL, "Label:       ", (label.empty() ? "None" : label), "\n");
-    log(_log::LOG_NORMAL, "Block size:  ", block_size, "\n");
-    log(_log::LOG_NORMAL, "Device path: ", device, "\n");
-
     if (device.empty()) {
         log(_log::LOG_ERROR, "You have to provide a device path!\n");
         return EXIT_FAILURE;
     }
 
-    // TODO: calculate device size, block_size sanity check, sha512sum library
-    log(_log::LOG_NORMAL, "Calculating filesystem layout...\n");
+    block_size_sanity_check(block_size);
+
+    log(_log::LOG_NORMAL, "Proceeding with the following setup:\n");
+    log(_log::LOG_NORMAL, "Label:       ", (label.empty() ? "None" : label), "\n");
+    log(_log::LOG_NORMAL, "Block size:  ", block_size, "\n");
+    log(_log::LOG_NORMAL, "Device path: ", device, "\n");
+
+    // TODO: calculate device size,
+    log(_log::LOG_NORMAL, "Calculating filesystem layout...");
     auto head = make_head(4096, (4ULL * 1024 * 1024 * 1024 * 1024) / (4096), "SampleDisk");
 
     // Output results
+    _log::output_to_stream(std::cout, "done.\n");
+    log(_log::LOG_NORMAL, "─────────────────────────────────────────────────────────────────────────────────────────────\n");
     log(_log::LOG_NORMAL, "Total Blocks      = ", head.static_information.fs_total_blocks, "\n");
     log(_log::LOG_NORMAL, "Block Size        = ", head.static_information.fs_block_size, "\n");
     log(_log::LOG_NORMAL, "Utilized Blocks   = ", head.static_information.utilized_blocks, "\n");
@@ -236,11 +263,50 @@ int main(int argc, char ** argv)
     log(_log::LOG_NORMAL, "  ┌────┬─ Logic Blocks = ", head.static_information.logic_blocks, "\n");
     log(_log::LOG_NORMAL, "  │    ├────── Data Block Bitmap Blocks = ", head.static_information.data_block_bitmap_blocks, "\n");
     log(_log::LOG_NORMAL, "  │    ├────── Redundancy Data Block Bitmap Blocks = ", head.static_information.redundancy_data_block_bitmap_blocks, "\n");
+    log(_log::LOG_NORMAL, "  │    ├────── Data Block Bitmap Checksum Blocks = ", head.static_information.data_block_bitmap_checksum_blocks, "\n");
+    log(_log::LOG_NORMAL, "  │    ├────── Redundancy Data Block Bitmap Checksum Blocks = ", head.static_information.redundancy_data_block_bitmap_checksum_blocks, "\n");
     log(_log::LOG_NORMAL, "  │    ├────── Data Blocks = ", head.static_information.data_blocks, "\n");
     log(_log::LOG_NORMAL, "  │    ├────── Data Block Sha512sum Checksum Blocks = ", head.static_information.data_block_checksum_blocks, "\n");
     log(_log::LOG_NORMAL, "  │    └────── Redundancy Data Block Checksum Sha512sum Blocks = ", head.static_information.redundancy_data_block_checksum_blocks, "\n");
     log(_log::LOG_NORMAL, "  └────┬─ Utility Blocks = ", head.static_information.utility_blocks, "\n");
     log(_log::LOG_NORMAL, "       ├────── Filesystem Head Static Backup Blocks = 5", "\n");
     log(_log::LOG_NORMAL, "       └────── Journaling Buffer Blocks = ", head.static_information.journaling_buffer_blocks, "\n");
+    log(_log::LOG_NORMAL, "─────────────────────────────────────────────────────────────────────────────────────────────\n");
+    log(_log::LOG_NORMAL, "Filesystem layout:\n");
+    log(_log::LOG_NORMAL, "  ┌──────────────────────────────────┐ \n");
+    log(_log::LOG_NORMAL, "  │          FILESYSTEM HEAD         │ * 1 block\n");
+    log(_log::LOG_NORMAL, "  ├──────────────────────────────────┤ \n");
+    log(_log::LOG_NORMAL, "  │         DATA BLOCK BITMAP        │ * ", head.static_information.data_block_bitmap_blocks, " block(s)\n");
+    log(_log::LOG_NORMAL, "  ├──────────────────────────────────┤ \n");
+    log(_log::LOG_NORMAL, "  │         BITMAP REDUNDANCY        │ * ", head.static_information.redundancy_data_block_bitmap_blocks, " block(s)\n");
+    log(_log::LOG_NORMAL, "  ├──────────────────────────────────┤ \n");
+    log(_log::LOG_NORMAL, "  │          BITMAP CHECKSUM         │ * ", head.static_information.data_block_bitmap_checksum_blocks, " block(s)\n");
+    log(_log::LOG_NORMAL, "  ├──────────────────────────────────┤ \n");
+    log(_log::LOG_NORMAL, "  │    BITMAP CHECKSUM REDUNDANCY    │ * ", head.static_information.redundancy_data_block_bitmap_checksum_blocks, " block(s)\n");
+    log(_log::LOG_NORMAL, "  ├──────────────────────────────────┤ \n");
+    log(_log::LOG_NORMAL, "  │             DATA BLOCK           │ * ", head.static_information.data_blocks, " block(s)\n");
+    log(_log::LOG_NORMAL, "  ├──────────────────────────────────┤ \n");
+    log(_log::LOG_NORMAL, "  │        DATA BLOCK CHECKSUM       │ * ", head.static_information.data_block_checksum_blocks, " block(s)\n");
+    log(_log::LOG_NORMAL, "  ├──────────────────────────────────┤ \n");
+    log(_log::LOG_NORMAL, "  │  DATA BLOCK CHECKSUM REDUNDANCY  │ * ", head.static_information.redundancy_data_block_checksum_blocks, " block(s)\n");
+    log(_log::LOG_NORMAL, "  ├──────────────────────────────────┤ \n");
+    log(_log::LOG_NORMAL, "  │         JOURNALING BUFFER        │ * ", head.static_information.journaling_buffer_blocks, " block(s)\n");
+    log(_log::LOG_NORMAL, "  ├──────────────────────────────────┤ \n");
+    log(_log::LOG_NORMAL, "  │   FILESYSTEM STATIC DATA BACKUP  │ * 1 block\n");
+    log(_log::LOG_NORMAL, "  ├──────────────────────────────────┤ \n");
+    log(_log::LOG_NORMAL, "  │  FILESYSTEM STATIC DATA CHECKSUM │ * 1 block\n");
+    log(_log::LOG_NORMAL, "  ├──────────────────────────────────┤ \n");
+    log(_log::LOG_NORMAL, "  │   FILESYSTEM DYNAMIC DATA BACKUP │ * 1 block\n");
+    log(_log::LOG_NORMAL, "  ├──────────────────────────────────┤ \n");
+    log(_log::LOG_NORMAL, "  │ FILESYSTEM DYNAMIC DATA CHECKSUM │ * 1 block\n");
+    log(_log::LOG_NORMAL, "  └──────────────────────────────────┘ \n");
+
+    log(_log::LOG_NORMAL, "Generating checksum...");
+    auto static_checksum = sha512sum((const char*)&head.static_information, sizeof(head.static_information));
+    auto dynamic_checksum = sha512sum((const char*)&head.dynamic_information, sizeof(head.dynamic_information));
+    std::memcpy(head.checksum_filed.static_information_checksum, static_checksum.data(), 64);
+    std::memcpy(head.checksum_filed.dynamic_information_checksum, dynamic_checksum.data(), 64);
+    _log::output_to_stream(std::cout, "done.\n");
+
     return 0;
 }

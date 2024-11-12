@@ -4,14 +4,8 @@
 #include <string>
 #include <iostream>
 #include <stdexcept>
-#include <iomanip>
 #include <chrono>
-#include <ctime>
-#include <execinfo.h>
-#include <unistd.h>
-#include <cstring>
 #include <regex>
-#include <cxxabi.h>
 
 #define _RED_     "\033[31m"
 #define _GREEN_   "\033[32m"
@@ -55,6 +49,26 @@ public:
     explicit fs_error_t(error_types_t, graceful_exit_t &);
     [[nodiscard]] const char * what() const noexcept override;
     [[nodiscard]] int get_err_code() const noexcept { return err_code; }
+};
+
+class NoSuchModule final : public fs_error_t {
+public:
+    explicit NoSuchModule(graceful_exit_t & handler) : fs_error_t(NO_SUCH_MODULE, handler) { }
+};
+
+class ModuleExists final : public fs_error_t {
+public:
+    explicit ModuleExists(graceful_exit_t & handler) : fs_error_t(MODULE_EXISTS, handler) { }
+};
+
+class ModuleLoadingFailed final : public fs_error_t {
+public:
+    explicit ModuleLoadingFailed(graceful_exit_t & handler) : fs_error_t(MODULE_LOADING_FAILED, handler) { }
+};
+
+class SymbolNotFound final : public fs_error_t {
+public:
+    explicit SymbolNotFound(graceful_exit_t & handler) : fs_error_t(SYMBOL_NOT_FOUND, handler) { }
 };
 
 namespace _log

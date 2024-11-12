@@ -88,7 +88,6 @@ function(add_unit_test
 endfunction()
 
 include_directories(src/include)
-include_directories(src/modules/include)
 
 # Debug support
 add_library(fs_debug SHARED
@@ -98,60 +97,17 @@ add_library(fs_debug SHARED
 )
 add_unit_test(fs_debug_test src/tests/fs_debug_test.cpp fs_debug)
 
-# Module manager
-add_library(module_mgr SHARED
-        src/include/mod_types.h
-        src/include/module.h
-        src/include/module.inl
-        src/modular/module.cpp
-)
-target_link_libraries(module_mgr PUBLIC fs_debug)
-add_unit_test(module_mgr_test src/tests/module_mgr_test.cpp module_mgr)
-
-# Config
-add_library(config SHARED
-        src/config/grammar.c
-        src/config/libconfig.c
-        src/config/scanctx.c
-        src/config/scanner.c
-        src/config/strbuf.c
-        src/config/strvec.c
-        src/config/util.c
-        src/config/wincompat.c
-
-        src/include/config/grammar.h
-        src/include/config/parsectx.h
-        src/include/config/scanctx.h
-        src/include/config/scanner.h
-        src/include/config/win32/stdint.h
-        src/include/config/strbuf.h
-        src/include/config/strvec.h
-        src/include/config/util.h
-        src/include/config/wincompat.h
-
-        src/config/libconfigcpp.cc
-
-        src/include/config/libconfig.h++
-        src/include/config/libconfig.hh
-)
-target_include_directories(config PUBLIC src/include/config)
-add_unit_test(config_test src/tests/config_test.cpp config)
-
-add_library(init SHARED
-        src/include/init.h
-        src/init/init.cpp
-)
-target_link_libraries(init PUBLIC config fs_debug module_mgr)
-add_unit_test(init_test src/tests/init_test.cpp init)
-
-# file system utility module
+# filesystem
+find_package(OpenSSL REQUIRED)
 add_library(simplesnapfs SHARED
-        src/modules/simplesnapfs/module_handler.cpp
-        src/modules/simplesnapfs/bitmap/bitmap.cpp
-        src/modules/include/simplesnapfs.h
-        src/modules/include/bitmap.h
+        src/simplesnapfs/bitmap.cpp
+        src/simplesnapfs/checksum.cpp
+
+        src/include/simplesnapfs.h
+        src/include/bitmap.h
+        src/include/checksum.h
 )
-target_link_libraries(simplesnapfs PUBLIC fs_debug)
+target_link_libraries(simplesnapfs PUBLIC fs_debug OpenSSL::SSL OpenSSL::Crypto)
 
 # utility helper library
 add_library(utility STATIC
@@ -164,7 +120,3 @@ add_executable(mkfs.simplesnapfs
         src/utils/mkfs.simplesnapfs.cpp
 )
 target_link_libraries(mkfs.simplesnapfs PUBLIC simplesnapfs fs_debug utility)
-
-# Example module
-add_library(mod_example SHARED src/tests/example.cpp)
-target_link_libraries(mod_example fs_debug)
