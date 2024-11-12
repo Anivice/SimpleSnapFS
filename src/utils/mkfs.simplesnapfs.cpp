@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <simplesnapfs.h>
 #include <chrono>
+#include <strstream>
 
 #define PACKAGE_VERSION "0.0.1"
 #define PACKAGE_FULLNAME "Simple Snapshot Filesystem Formatting Tool"
@@ -38,94 +39,132 @@ uint64_t get_current_unix_timestamp()
            ).count();
 }
 
-// Function to calculate all components of logic_blocks
-simplesnapfs_filesystem_head_t make_fs_head(const uint64_t total_blocks, const uint16_t block_size, const char * label)
+class limited_stack
 {
-    // Start with higher initial guesses to maximize inode and data blocks
-    uint64_t inode_blk_count = total_blocks * 0.055880000f;
-    uint64_t data_blk_count = total_blocks * 0.894120000f;
+private:
+    std::array<uint64_t, 32> elements{}; // Fixed-size array to hold the last 32 elements
+    size_t size;                       // Tracks the number of elements currently in the stack
+    size_t next_index;                 // Index where the next push will be inserted
 
-    uint64_t logic_blocks, utility_blocks, journaling_blocks;
-    uint64_t inode_bitmap_blk_count, data_blk_bitmap_blk_count;
-    uint64_t inode_bitmap_blk_512chesum_filed_blk_count, data_block_bitmap_blk_512chesum_filed_blk_count;
-    uint64_t inode_512checksum_blk_count, data_blk_512checksum_blk_count;
+public:
+    explicit limited_stack() : size(0), next_index(0) {}
 
-    // Iteratively adjust to maximize inode_blk_count and data_blk_count while satisfying constraints
-    while (true)
+    // Push function: Adds an element to the stack
+    void push(const uint64_t value)
     {
-        // Calculate inode and data bitmap block counts
-        inode_bitmap_blk_count = cal_blk(inode_blk_count, 8 * block_size);
-        data_blk_bitmap_blk_count = cal_blk(data_blk_count, 8 * block_size);
-
-        // Calculate checksum blocks for the bitmaps
-        inode_bitmap_blk_512chesum_filed_blk_count = cal_blk(inode_bitmap_blk_count, block_size / (512 / 8));
-        data_block_bitmap_blk_512chesum_filed_blk_count = cal_blk(data_blk_bitmap_blk_count, block_size / (512 / 8));
-
-        // Calculate checksum blocks for inode and data blocks
-        inode_512checksum_blk_count = cal_blk(inode_blk_count, block_size / (512 / 8));
-        data_blk_512checksum_blk_count = cal_blk(data_blk_count, block_size / (512 / 8));
-
-        // Calculate total logic blocks as the sum of all components
-        logic_blocks = inode_bitmap_blk_count + data_blk_bitmap_blk_count +
-                       inode_bitmap_blk_512chesum_filed_blk_count + data_block_bitmap_blk_512chesum_filed_blk_count +
-                       inode_blk_count + inode_512checksum_blk_count +
-                       data_blk_count + data_blk_512checksum_blk_count;
-
-        // Calculate utility_blocks and check if we can compute journaling_blocks
-        utility_blocks = total_blocks - logic_blocks;
-
-        // Check if utility_blocks is sufficient to include the required 5 + journaling_blocks
-        if (utility_blocks >= 5) {
-            journaling_blocks = utility_blocks - 5;
-            break;
+        elements[next_index] = value;     // Insert the element at the current index
+        next_index = (next_index + 1) % 32; // Wrap around if we reach the end of the array
+        if (size < 32) {
+            size++; // Increase size only until we reach 32
         }
-
-        // If not feasible, reduce inode and data block counts to fit within the constraints
-        if (inode_blk_count > 1) inode_blk_count--;
-        if (data_blk_count > 1) data_blk_count--;
     }
 
-    auto info_level_detector = [](const uint16_t size)->uint32_t {
-        if (size == 512) {
-            return 0;
-        } else if (size >= 1024 && size <= 2048) {
-            return 1;
-        } else {
-            return 2;
+    // Search function: Checks if an element is present in the stack
+    [[nodiscard]] bool is_present(const uint64_t value) const
+    {
+        for (size_t i = 0; i < size; i++) {
+            if (elements[i] == value) {
+                return true; // Element found
+            }
         }
+        return false; // Element not found
+    }
+};
+
+// Function to calculate the unknown variables
+simplesnapfs_filesystem_head_t make_head(const uint32_t block_size, const uint64_t block_count, const char * label)
+{
+    const uint64_t allowed_attempts = block_count;
+
+    if (block_count < 74) {
+        log(_log::LOG_ERROR, "Provided blocks are too few (", block_count, " blocks)! At least 74 blocks are needed to initialize the filesystem.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    limited_stack total_utilized_block_history;
+    // Estimating journaling_blocks initially
+    uint64_t estimated_journaling_blocks = (block_count - 5) / 51; // Basic estimate, adjust as needed
+    bool force_stop = false;
+
+    auto fs_inode_info_level = [](const uint16_t _block_size) -> uint32_t {
+        if (_block_size == 512) return 0;
+        else if (_block_size == 1024 || _block_size == 2048) return 1;
+        else return 3;
     };
 
-    simplesnapfs_filesystem_head_t fs_head = {
-        .static_information = {
-            .fs_identification_number = FILESYSTEM_MAGIC_NUMBER,
-            .fs_block_count = total_blocks,
-            .fs_block_size = block_size,
-            .inode_bitmap_block_count = inode_bitmap_blk_count,
-            .inode_bitmap_checksum_count = inode_bitmap_blk_512chesum_filed_blk_count,
-            .inode_configuration_flag = {
-                .inode_info_level = info_level_detector(block_size),
-                .reserved = 0,
-            },
-            .inode_count = inode_blk_count,
-            .inode_checksum_filed_count = inode_512checksum_blk_count,
-            .data_block_bitmap_block_count = data_blk_bitmap_blk_count,
-            .data_block_bitmap_checksum_count = data_block_bitmap_blk_512chesum_filed_blk_count,
-            .data_block_configuration_flag = { },
-            .data_block_count = data_blk_count,
-            .data_block_checksum_filed_count = data_blk_512checksum_blk_count,
-            .journaling_buffer_block_count = journaling_blocks,
-            .fs_creation_unix_timestamp = get_current_unix_timestamp(),
-            .fs_label = { },
-            .fs_identification_number_redundancy = FILESYSTEM_MAGIC_NUMBER
-        },
-        .dynamic_information = {}
-    };
+    for (uint64_t attempt = 0; attempt < allowed_attempts; attempt++)
+    {
+        // Calculate dependent variables based on the current estimate
+        uint64_t data_blocks = 50 * estimated_journaling_blocks;
+        uint64_t data_block_bitmap_blocks = cal_blk(data_blocks, 8 * block_size);
+        uint64_t data_blk_bitmap_checksum_filed_blocks = cal_blk(data_block_bitmap_blocks, block_size / (512 / 8));
+        uint64_t data_blk_checksum_blocks = cal_blk(data_blocks, block_size / (512 / 8));
 
-    strncpy(fs_head.static_information.fs_label, label,
-        std::min(sizeof(fs_head.static_information.fs_label), strlen(label))
-    );
+        uint64_t logic_blocks = 2 * (data_block_bitmap_blocks + data_blk_bitmap_checksum_filed_blocks + data_blk_checksum_blocks) + data_blocks;
+        uint64_t utility_blocks = estimated_journaling_blocks + 5;
 
-    return fs_head;
+        if (total_utilized_block_history.is_present(logic_blocks + utility_blocks) &&
+            (logic_blocks + utility_blocks < block_count))
+        {
+            log(_log::LOG_NORMAL, "Optimization has reached its limit. Not all available blocks can be utilized. Force stopping...\n");
+            force_stop = true;
+        }
+
+        total_utilized_block_history.push(logic_blocks + utility_blocks);
+
+        // Check if we match the block count
+        if (force_stop || utility_blocks + logic_blocks == block_count)
+        {
+            simplesnapfs_filesystem_head_t head =
+            {
+                .static_information = {
+                    .fs_identification_number = FILESYSTEM_MAGIC_NUMBER,
+
+                    .fs_total_blocks = block_count,
+                    .fs_block_size = block_size,
+                    .logic_blocks = logic_blocks,
+                    .utility_blocks = utility_blocks,
+
+                    .utilized_blocks = logic_blocks + utility_blocks,
+
+                    .data_block_bitmap_blocks = data_block_bitmap_blocks,
+                    .redundancy_data_block_bitmap_blocks = data_block_bitmap_blocks,
+                    .data_block_bitmap_checksum_blocks = data_blk_bitmap_checksum_filed_blocks,
+                    .redundancy_data_block_bitmap_checksum_blocks = data_blk_bitmap_checksum_filed_blocks,
+                    .data_blocks = data_blocks,
+                    .data_block_checksum_blocks = data_blk_checksum_blocks,
+                    .redundancy_data_block_checksum_blocks = data_blk_checksum_blocks,
+
+                    .journaling_buffer_blocks = estimated_journaling_blocks,
+                    .fs_creation_unix_timestamp = get_current_unix_timestamp(),
+
+                    .inode_configuration_flag = {
+                        .inode_info_level = fs_inode_info_level(block_size),
+                    },
+
+                    .redundancy_fs_identification_number = FILESYSTEM_MAGIC_NUMBER
+                },
+
+                .dynamic_information = { }
+            };
+
+            strncpy(head.static_information.fs_label, label,
+                    std::min(sizeof(head.static_information.fs_label), strlen(label))
+                );
+
+            return head;
+        }
+
+        // Adjust journaling_blocks based on whether we're over or under the target
+        if (utility_blocks + logic_blocks < block_count) {
+            estimated_journaling_blocks++; // Increase to match
+        } else {
+            estimated_journaling_blocks--; // Decrease to match
+        }
+    }
+
+    log(_log::LOG_ERROR, "Calculation failed within the allowed attempts.\n");
+    exit(EXIT_FAILURE);
 }
 
 int main(int argc, char ** argv)
@@ -151,11 +190,11 @@ int main(int argc, char ** argv)
         if (*arg == "-h") {
             // The user query help, ignore all other options
             output_help(argv[0], std::cout);
-            return 0;
+            return EXIT_SUCCESS;
         } else if (*arg == "-V") {
             // The user query version, ignore all other options
             output_version(std::cout);
-            return 0;
+            return EXIT_SUCCESS;
         } else if (*arg == "-v") {
             verbose = true;
         } else if (*arg == "-d") {
@@ -170,7 +209,7 @@ int main(int argc, char ** argv)
         } else {
             log(_log::LOG_ERROR, "Unrecognized option: ", *arg, "\n");
             output_help(argv[0], std::cerr);
-            return 1;
+            return EXIT_FAILURE;
         }
     }
 
@@ -182,23 +221,26 @@ int main(int argc, char ** argv)
 
     if (device.empty()) {
         log(_log::LOG_ERROR, "You have to provide a device path!\n");
-        return 1;
+        return EXIT_FAILURE;
     }
 
     // TODO: calculate device size, block_size sanity check, sha512sum library
-    auto head = make_fs_head(32 * 1024 * 1024 / 4096, 4096, "SampleDisk");
+    log(_log::LOG_NORMAL, "Calculating filesystem layout...\n");
+    auto head = make_head(4096, (4ULL * 1024 * 1024 * 1024 * 1024) / (4096), "SampleDisk");
 
     // Output results
-    std::cout << "total_blocks:                     " << head.static_information.fs_block_count                 << std::endl;
-    std::cout << "inode_bitmap_blk_count:           " << head.static_information.inode_bitmap_block_count       << std::endl;
-    std::cout << "data_blk_bitmap_blk_count:        " << head.static_information.data_block_bitmap_block_count  << std::endl;
-    std::cout << "inode_bitmap_blk_512chesum_filed_blk_count:       " << head.static_information.inode_bitmap_checksum_count << std::endl;
-    std::cout << "data_block_bitmap_blk_512chesum_filed_blk_count:  " << head.static_information.data_block_bitmap_checksum_count << std::endl;
-    std::cout << "inode_blk_count:                  " << head.static_information.inode_count << std::endl;
-    std::cout << "inode_512checksum_blk_count:      " << head.static_information.inode_checksum_filed_count << std::endl;
-    std::cout << "data_blk_count:                   " << head.static_information.data_block_count << std::endl;
-    std::cout << "data_blk_512checksum_blk_count:   " << head.static_information.data_block_checksum_filed_count << std::endl;
-    std::cout << "journaling_blocks:                " << head.static_information.journaling_buffer_block_count << std::endl;
-
+    log(_log::LOG_NORMAL, "Total Blocks      = ", head.static_information.fs_total_blocks, "\n");
+    log(_log::LOG_NORMAL, "Block Size        = ", head.static_information.fs_block_size, "\n");
+    log(_log::LOG_NORMAL, "Utilized Blocks   = ", head.static_information.utilized_blocks, "\n");
+    log(_log::LOG_NORMAL, "Discarded Blocks  = ", head.static_information.fs_total_blocks - head.static_information.utilized_blocks, "\n");
+    log(_log::LOG_NORMAL, "  ┌────┬─ Logic Blocks = ", head.static_information.logic_blocks, "\n");
+    log(_log::LOG_NORMAL, "  │    ├────── Data Block Bitmap Blocks = ", head.static_information.data_block_bitmap_blocks, "\n");
+    log(_log::LOG_NORMAL, "  │    ├────── Redundancy Data Block Bitmap Blocks = ", head.static_information.redundancy_data_block_bitmap_blocks, "\n");
+    log(_log::LOG_NORMAL, "  │    ├────── Data Blocks = ", head.static_information.data_blocks, "\n");
+    log(_log::LOG_NORMAL, "  │    ├────── Data Block Sha512sum Checksum Blocks = ", head.static_information.data_block_checksum_blocks, "\n");
+    log(_log::LOG_NORMAL, "  │    └────── Redundancy Data Block Checksum Sha512sum Blocks = ", head.static_information.redundancy_data_block_checksum_blocks, "\n");
+    log(_log::LOG_NORMAL, "  └────┬─ Utility Blocks = ", head.static_information.utility_blocks, "\n");
+    log(_log::LOG_NORMAL, "       ├────── Filesystem Head Static Backup Blocks = 5", "\n");
+    log(_log::LOG_NORMAL, "       └────── Journaling Buffer Blocks = ", head.static_information.journaling_buffer_blocks, "\n");
     return 0;
 }
