@@ -6,9 +6,15 @@
 #include <chrono>
 #include <checksum.h>
 #include <cstring>
+#include <block_io.h>
 
 #define PACKAGE_VERSION "0.0.1"
 #define PACKAGE_FULLNAME "Simple Snapshot Filesystem Formatting Tool"
+
+#define KBYTES(n) (1024 * n)
+#define MBYTES(n) (1024 * KBYTES(n))
+
+constexpr char empty_buffer [MBYTES(64)] { 0 };
 
 void output_version(std::ostream & identifier)
 {
@@ -115,8 +121,22 @@ simplesnapfs_filesystem_head_t make_head(const uint32_t block_size, const uint64
         // Check if we match the block count
         if (force_stop || utility_blocks + logic_blocks == block_count)
         {
-            simplesnapfs_filesystem_head_t head =
-            {
+            // Calculate base indexes for different sections to avoid redundant calculations
+            uint64_t filesystem_head = 1;
+            uint64_t data_bitmap_start = filesystem_head;
+            uint64_t redundancy_data_bitmap_start = data_bitmap_start + data_block_bitmap_blocks;
+            uint64_t data_bitmap_checksum_start = redundancy_data_bitmap_start + data_block_bitmap_blocks;
+            uint64_t redundancy_data_bitmap_checksum_start = data_bitmap_checksum_start + data_blk_bitmap_checksum_filed_blocks;
+            uint64_t data_blocks_start = redundancy_data_bitmap_checksum_start + data_blk_bitmap_checksum_filed_blocks;
+            uint64_t data_checksum_start = data_blocks_start + data_blocks;
+            uint64_t redundancy_data_checksum_start = data_checksum_start + data_blk_checksum_blocks;
+            uint64_t journaling_buffer_start = redundancy_data_checksum_start + data_blk_checksum_blocks;
+            uint64_t fs_static_backup_start = journaling_buffer_start + estimated_journaling_blocks;
+            uint64_t fs_static_backup_checksum_start = fs_static_backup_start + 1;
+            uint64_t fs_dynamic_backup_start = fs_static_backup_checksum_start + 1;
+            uint64_t fs_dynamic_backup_checksum_start = fs_dynamic_backup_start + 1;
+
+            simplesnapfs_filesystem_head_t head = {
                 .static_information = {
                     .fs_identification_number = FILESYSTEM_MAGIC_NUMBER,
 
@@ -124,18 +144,39 @@ simplesnapfs_filesystem_head_t make_head(const uint32_t block_size, const uint64
                     .fs_block_size = block_size,
                     .logic_blocks = logic_blocks,
                     .utility_blocks = utility_blocks,
-
                     .utilized_blocks = logic_blocks + utility_blocks,
 
+                    .filesystem_head_blk_index = 0,
+
+                    .data_block_bitmap_blk_index = data_bitmap_start,
                     .data_block_bitmap_blocks = data_block_bitmap_blocks,
+
+                    .redundancy_data_block_bitmap_blk_index = redundancy_data_bitmap_start,
                     .redundancy_data_block_bitmap_blocks = data_block_bitmap_blocks,
+
+                    .data_block_bitmap_checksum_blk_index = data_bitmap_checksum_start,
                     .data_block_bitmap_checksum_blocks = data_blk_bitmap_checksum_filed_blocks,
+
+                    .redundancy_data_block_bitmap_checksum_blk_index = redundancy_data_bitmap_checksum_start,
                     .redundancy_data_block_bitmap_checksum_blocks = data_blk_bitmap_checksum_filed_blocks,
+
+                    .data_block_index = data_blocks_start,
                     .data_blocks = data_blocks,
+
+                    .data_block_checksum_blk_index = data_checksum_start,
                     .data_block_checksum_blocks = data_blk_checksum_blocks,
+
+                    .redundancy_data_block_checksum_blk_index = redundancy_data_checksum_start,
                     .redundancy_data_block_checksum_blocks = data_blk_checksum_blocks,
 
+                    .journaling_buffer_blk_index = journaling_buffer_start,
                     .journaling_buffer_blocks = estimated_journaling_blocks,
+
+                    .fs_static_data_backup_blk_index = fs_static_backup_start,
+                    .fs_static_data_backup_checksum_blk_index = fs_static_backup_checksum_start,
+                    .fs_dynamic_data_backup_blk_index = fs_dynamic_backup_start,
+                    .fs_dynamic_data_backup_checksum_blk_index = fs_dynamic_backup_checksum_start,
+
                     .fs_creation_unix_timestamp = get_current_unix_timestamp(),
 
                     .inode_configuration_flag = {
@@ -166,9 +207,6 @@ simplesnapfs_filesystem_head_t make_head(const uint32_t block_size, const uint64
     log(_log::LOG_ERROR, "Calculation failed within the allowed attempts.\n");
     exit(EXIT_FAILURE);
 }
-
-#define KBYTES(n) (1024 * n)
-#define MBYTES(n) (1024 * KBYTES(n))
 
 void block_size_sanity_check(const uint32_t block_size)
 {
@@ -249,9 +287,12 @@ int main(int argc, char ** argv)
     log(_log::LOG_NORMAL, "Block size:  ", block_size, "\n");
     log(_log::LOG_NORMAL, "Device path: ", device, "\n");
 
-    // TODO: calculate device size,
+    log(_log::LOG_NORMAL, "Opening device...");
+    block_io io(device, block_size);
+    _log::output_to_stream(std::cout, "done.\n");
+
     log(_log::LOG_NORMAL, "Calculating filesystem layout...");
-    auto head = make_head(4096, (4ULL * 1024 * 1024 * 1024 * 1024) / (4096), "SampleDisk");
+    auto head = make_head(block_size, io.get_total_blocks(), label.c_str());
 
     // Output results
     _log::output_to_stream(std::cout, "done.\n");
@@ -300,12 +341,71 @@ int main(int argc, char ** argv)
     log(_log::LOG_NORMAL, "  ├──────────────────────────────────┤ \n");
     log(_log::LOG_NORMAL, "  │ FILESYSTEM DYNAMIC DATA CHECKSUM │ * 1 block\n");
     log(_log::LOG_NORMAL, "  └──────────────────────────────────┘ \n");
+    log(_log::LOG_NORMAL, "─────────────────────────────────────────────────────────────────────────────────────────────\n");
 
-    log(_log::LOG_NORMAL, "Generating checksum...");
+    log(_log::LOG_NORMAL, "Generating checksum for head...");
     auto static_checksum = sha512sum((const char*)&head.static_information, sizeof(head.static_information));
     auto dynamic_checksum = sha512sum((const char*)&head.dynamic_information, sizeof(head.dynamic_information));
     std::memcpy(head.checksum_filed.static_information_checksum, static_checksum.data(), 64);
     std::memcpy(head.checksum_filed.dynamic_information_checksum, dynamic_checksum.data(), 64);
+    _log::output_to_stream(std::cout, "done.\n");
+
+    log(_log::LOG_NORMAL, "As of now, filesystem header is now constructed.\n");
+
+    log(_log::LOG_NORMAL, "─────────────────────────────────────────────────────────────────────────────────────────────\n");
+    log(_log::LOG_NORMAL, "Writing filesystem head...");
+    io.get_block(0).write(empty_buffer, block_size, 0);
+    io.get_block(0).write((const char*)&head, sizeof(head), 0);
+    _log::output_to_stream(std::cout, "done.\n");
+
+    log(_log::LOG_NORMAL, "Clearing bitmap and bitmap redundancy...");
+    constexpr uint64_t bitmap_starting_block = 1 /* filesystem head */;
+    const uint64_t bitmap_and_redundancy_blocks =
+        head.static_information.data_block_bitmap_blocks +
+        head.static_information.redundancy_data_block_bitmap_blocks +
+        head.static_information.data_block_bitmap_checksum_blocks +
+        head.static_information.redundancy_data_block_bitmap_checksum_blocks;
+    for (uint64_t current_block = bitmap_starting_block; current_block <= bitmap_and_redundancy_blocks; current_block++) {
+        io.get_block(current_block).write(empty_buffer, block_size, 0);
+    }
+    _log::output_to_stream(std::cout, "done.\n");
+
+    log(_log::LOG_NORMAL, "Clearing data block checksum and data block checksum redundancy...");
+    const uint64_t skipped_blocks_for_emptying_blk_checksum_and_redundancy = head.static_information.data_block_checksum_blk_index;
+    const uint64_t data_block_checksum_block_and_redundancy_and_journaling =
+        head.static_information.data_block_checksum_blocks +
+        head.static_information.redundancy_data_block_checksum_blocks +
+        head.static_information.journaling_buffer_blocks;
+    for (uint64_t current_block = skipped_blocks_for_emptying_blk_checksum_and_redundancy;
+        current_block <= skipped_blocks_for_emptying_blk_checksum_and_redundancy + data_block_checksum_block_and_redundancy_and_journaling;
+        current_block++)
+    {
+        io.get_block(current_block).write(empty_buffer, block_size, 0);
+    }
+    _log::output_to_stream(std::cout, "done.\n");
+
+    log(_log::LOG_NORMAL, "Writing filesystem static head backup...");
+    std::vector < char > static_block(block_size), static_fs_head_block_checksum_for_write(block_size);
+    io.get_block(head.static_information.fs_static_data_backup_blk_index).write(empty_buffer, block_size, 0);
+    io.get_block(head.static_information.fs_static_data_backup_blk_index).write((const char*)&head.static_information, sizeof(head.static_information), 0);
+
+    // read the block for checksum:
+    io.get_block(head.static_information.fs_static_data_backup_blk_index).read(static_block.data(), block_size, 0);
+    auto static_fs_head_block_checksum = sha512sum(static_block.data(), block_size);
+    std::memcpy(static_fs_head_block_checksum_for_write.data(), static_fs_head_block_checksum.data(), 64);
+    io.get_block(head.static_information.fs_static_data_backup_checksum_blk_index).write(static_fs_head_block_checksum_for_write.data(), block_size, 0);
+    _log::output_to_stream(std::cout, "done.\n");
+
+    log(_log::LOG_NORMAL, "Writing filesystem dynamic head backup...");
+    std::vector < char > dynamic_block(block_size), dynamic_fs_head_block_checksum_for_write(block_size);
+    io.get_block(head.static_information.fs_dynamic_data_backup_blk_index).write(empty_buffer, block_size, 0);
+    io.get_block(head.static_information.fs_dynamic_data_backup_blk_index).write((const char*)&head.dynamic_information, sizeof(head.dynamic_information), 0);
+
+    // read the block for checksum:
+    io.get_block(head.static_information.fs_dynamic_data_backup_blk_index).read(dynamic_block.data(), block_size, 0);
+    auto dynamic_fs_head_block_checksum = sha512sum(dynamic_block.data(), block_size);
+    std::memcpy(dynamic_fs_head_block_checksum_for_write.data(), dynamic_fs_head_block_checksum.data(), 64);
+    io.get_block(head.static_information.fs_dynamic_data_backup_checksum_blk_index).write(dynamic_fs_head_block_checksum_for_write.data(), block_size, 0);
     _log::output_to_stream(std::cout, "done.\n");
 
     return 0;

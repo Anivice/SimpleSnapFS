@@ -8,25 +8,49 @@
 struct simplesnapfs_filesystem_head_t
 {
     struct _static_information {
-        uint64_t fs_identification_number{};
-        uint64_t fs_total_blocks{};
-        uint32_t fs_block_size{};
-        uint64_t logic_blocks{};
-        uint64_t utility_blocks{};
-        uint64_t utilized_blocks{};
+        uint64_t fs_identification_number { };
 
-        // logic blocks
-        uint64_t data_block_bitmap_blocks{};
-        uint64_t redundancy_data_block_bitmap_blocks{};
-        uint64_t data_block_bitmap_checksum_blocks{};
-        uint64_t redundancy_data_block_bitmap_checksum_blocks{};
-        uint64_t data_blocks{};
-        uint64_t data_block_checksum_blocks{};
-        uint64_t redundancy_data_block_checksum_blocks{};
+        uint64_t fs_total_blocks { };
+        uint32_t fs_block_size { };
+        uint64_t logic_blocks { };
+        uint64_t utility_blocks { };
+        uint64_t utilized_blocks { };
+
+        // logic blocks and vectors
+        uint64_t filesystem_head_blk_index = 0;
+
+        uint64_t data_block_bitmap_blk_index = 1;
+        uint64_t data_block_bitmap_blocks { };
+
+        uint64_t redundancy_data_block_bitmap_blk_index { };
+        uint64_t redundancy_data_block_bitmap_blocks { };
+
+        uint64_t data_block_bitmap_checksum_blk_index { };
+        uint64_t data_block_bitmap_checksum_blocks { };
+
+        uint64_t redundancy_data_block_bitmap_checksum_blk_index { };
+        uint64_t redundancy_data_block_bitmap_checksum_blocks { };
+
+        uint64_t data_block_index { };
+        uint64_t data_blocks { };
+
+        uint64_t data_block_checksum_blk_index { };
+        uint64_t data_block_checksum_blocks { };
+
+        uint64_t redundancy_data_block_checksum_blk_index { };
+        uint64_t redundancy_data_block_checksum_blocks { };
 
         // utility blocks
-        uint64_t journaling_buffer_blocks{};
-        uint64_t fs_creation_unix_timestamp{};
+        uint64_t journaling_buffer_blk_index { };
+        uint64_t journaling_buffer_blocks { };
+
+        // vector
+        uint64_t fs_static_data_backup_blk_index { };
+        uint64_t fs_static_data_backup_checksum_blk_index { };
+        uint64_t fs_dynamic_data_backup_blk_index { };
+        uint64_t fs_dynamic_data_backup_checksum_blk_index { };
+
+        uint64_t fs_creation_unix_timestamp { };
         char fs_label[32] { 0 };
 
         struct _inode_configuration_flag {
@@ -34,7 +58,7 @@ struct simplesnapfs_filesystem_head_t
             uint32_t reserved:30 = 0;
         } inode_configuration_flag { };
 
-        uint64_t redundancy_fs_identification_number{};
+        uint64_t redundancy_fs_identification_number { };
     } static_information { };
 
     struct _dynamic_information {

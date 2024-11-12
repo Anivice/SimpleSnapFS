@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.29)
 
 project(SimpleSnapFS C CXX)
 
@@ -102,10 +102,12 @@ find_package(OpenSSL REQUIRED)
 add_library(simplesnapfs SHARED
         src/simplesnapfs/bitmap.cpp
         src/simplesnapfs/checksum.cpp
+        src/simplesnapfs/block_io.cpp
 
         src/include/simplesnapfs.h
         src/include/bitmap.h
         src/include/checksum.h
+        src/include/block_io.h
 )
 target_link_libraries(simplesnapfs PUBLIC fs_debug OpenSSL::SSL OpenSSL::Crypto)
 

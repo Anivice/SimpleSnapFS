@@ -4,10 +4,8 @@
 
 const char * sysdarft_errors[] = {
     "Success",
-    "No such module",
-    "Module exists",
-    "Module loading failed",
-    "Symbol not found",
+    "Sha512sum checksum error",
+    "File operation error",
 };
 
 inline std::string init_error_msg(const fs_error_t::error_types_t types)
@@ -24,13 +22,12 @@ inline std::string init_error_msg(const fs_error_t::error_types_t types)
     return str.str();
 }
 
-fs_error_t::fs_error_t(const fs_error_t::error_types_t types, graceful_exit_t & handler)
-    : std::runtime_error(init_error_msg(types)), exit_handler(handler), err_code(types)
+fs_error_t::fs_error_t(const error_types_t types)
+    : std::runtime_error(init_error_msg(types)), err_code(types)
 {
     log(_log::LOG_NORMAL, "Exception generated!\n");
     err_info = std::runtime_error::what();
     log(_log::LOG_NORMAL, "Now executing exit handler...\n");
-    exit_handler.graceful_exit_handler();
     log(_log::LOG_NORMAL, "Exit handler execution completed.\n");
 }
 

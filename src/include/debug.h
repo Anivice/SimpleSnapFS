@@ -20,55 +20,52 @@ std::string obtain_stack_frame();
 std::string demangled_name(const std::string&);
 std::string get_addr_from_symbol(const std::string&);
 
-class graceful_exit_t
-{
-protected:
-    void * parameter = nullptr;
-
-public:
-    virtual void graceful_exit_handler() { };
-    virtual ~graceful_exit_t() = default;
-};
-
 class fs_error_t : public std::runtime_error
 {
 private:
     std::string err_info;
-    graceful_exit_t & exit_handler;
     int err_code;
 
 public:
     enum error_types_t {
         SUCCESS,
-        NO_SUCH_MODULE,
-        MODULE_EXISTS,
-        MODULE_LOADING_FAILED,
-        SYMBOL_NOT_FOUND,
+        SHA512SUM_CHECKSUM_ERROR,
+        FILE_OPERATION_ERROR
     };
 
-    explicit fs_error_t(error_types_t, graceful_exit_t &);
+    explicit fs_error_t(error_types_t);
     [[nodiscard]] const char * what() const noexcept override;
     [[nodiscard]] int get_err_code() const noexcept { return err_code; }
 };
 
-class NoSuchModule final : public fs_error_t {
+class Sha512sumChecksumError final : public fs_error_t {
 public:
-    explicit NoSuchModule(graceful_exit_t & handler) : fs_error_t(NO_SUCH_MODULE, handler) { }
+    explicit Sha512sumChecksumError() : fs_error_t(SHA512SUM_CHECKSUM_ERROR) { }
 };
 
-class ModuleExists final : public fs_error_t {
+class CannotOpenFile final : public fs_error_t {
 public:
-    explicit ModuleExists(graceful_exit_t & handler) : fs_error_t(MODULE_EXISTS, handler) { }
+    explicit CannotOpenFile() : fs_error_t(FILE_OPERATION_ERROR) { }
 };
 
-class ModuleLoadingFailed final : public fs_error_t {
+class CannotDetermineFileSize final : public fs_error_t {
 public:
-    explicit ModuleLoadingFailed(graceful_exit_t & handler) : fs_error_t(MODULE_LOADING_FAILED, handler) { }
+    explicit CannotDetermineFileSize() : fs_error_t(FILE_OPERATION_ERROR) { }
 };
 
-class SymbolNotFound final : public fs_error_t {
+class SeekingFailed final : public fs_error_t {
 public:
-    explicit SymbolNotFound(graceful_exit_t & handler) : fs_error_t(SYMBOL_NOT_FOUND, handler) { }
+    explicit SeekingFailed() : fs_error_t(FILE_OPERATION_ERROR) { }
+};
+
+class ReadFailed final : public fs_error_t {
+public:
+    explicit ReadFailed() : fs_error_t(FILE_OPERATION_ERROR) { }
+};
+
+class WriteFailed final : public fs_error_t {
+public:
+    explicit WriteFailed() : fs_error_t(FILE_OPERATION_ERROR) { }
 };
 
 namespace _log
