@@ -75,4 +75,6 @@ struct simplesnapfs_filesystem_head_t
     } checksum_filed { };
 };
 
+static_assert(sizeof(simplesnapfs_filesystem_head_t) < 512, "Header size is too big!");
+
 #endif //SIMPLESNAPFS_H
